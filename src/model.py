@@ -3,100 +3,119 @@
 # Author: lionel
 
 import tensorflow as tf
-
-from src.data_helper import InputHelper
-from src.siamese_network import SiameseLSTM
 import numpy as np
+import math
 
-FLAGS = None
+from src.data_helper import extract_chinese_word
+from src.my_model import siamese_model
 
-
-def build_dic_hash_table(word_dic):
-    word_table = tf.contrib.lookup.HashTable(
-        tf.contrib.lookup.KeyValueTensorInitializer(list(word_dic.keys()), list(word_dic.values())), word_dic['unk'])
-    return word_table
-
-
-def gen(x1_text, x2_text, y_label):
-    index = 0
-    while True:
-        y = y_label[index]
-        x1 = x1_text[index]
-        x2 = x2_text[index]
-        yield (x1, x2, y)
-        index += 1
-        if index == len(x1_text):
-            index = 0
+flags = tf.app.flags
+flags.DEFINE_integer("sentence_max_len", 10, "max length of sentences")
+flags.DEFINE_string("pad_word", "<pad>", "used for pad sentence")
+flags.DEFINE_string("train_data", "../data/dish_train.csv", "train data")
+flags.DEFINE_string("valid_data", "../data/dish_valid.csv", "valid data")
+flags.DEFINE_string("vocab_data", "../data/dish_vocab.csv", "vocab file")
+flags.DEFINE_string("tensorboard_dir", "../tensorboard", 'tensorboard file')
+flags.DEFINE_integer("batch_size", 100, "batch size")
+flags.DEFINE_integer("embedding_size", 30, "embedding size")
+flags.DEFINE_integer("train_data_size", 18000, "train_data_size")
+flags.DEFINE_integer("valid_data_size", 2000, "train_data_size")
+FLAGS = flags.FLAGS
 
 
-def train_input_fn(shuffle_size, batch_size, x1, x2, y, repeat_size=None):
-    dataset = tf.data.Dataset.from_generator(lambda: gen(x1, x2, y), (tf.string, tf.string, tf.int32),
-                                             (tf.TensorShape([None]), tf.TensorShape([None]), tf.TensorShape([])))
-    return dataset.shuffle(shuffle_size).repeat(repeat_size).padded_batch(batch_size=batch_size, padded_shapes=(
-        tf.TensorShape([FLAGS.sequence_length]), tf.TensorShape([FLAGS.sequence_length]), tf.TensorShape([])),
-                                                                          padding_values=('pad', 'pad', -1))
+def parse_line(line, vocab):
+    def get_content(record):
+        fields = record.decode('utf-8').strip().split("\t")
+        if len(fields) != 3:
+            raise ValueError("invalid record %s" % record)
+        words = [ele for ele in list(extract_chinese_word(fields[0]))]
+        words2 = [ele for ele in list(extract_chinese_word(fields[1]))]
+        if len(words) > FLAGS.sentence_max_len:
+            words = words[:FLAGS.sentence_max_len]
+        if len(words) < FLAGS.sentence_max_len:
+            for i in range(FLAGS.sentence_max_len - len(words)):
+                words.insert(0, FLAGS.pad_word)
+        if len(words2) > FLAGS.sentence_max_len:
+            words2 = words2[:FLAGS.sentence_max_len]
+        if len(words2) < FLAGS.sentence_max_len:
+            for i in range(FLAGS.sentence_max_len - len(words2)):
+                words2.insert(0, FLAGS.pad_word)
+        return [words, words2, np.float32(fields[2])]
+
+    result = tf.py_func(get_content, [line], [tf.string, tf.string, tf.float32])
+    result[0].set_shape([FLAGS.sentence_max_len])
+    result[1].set_shape([FLAGS.sentence_max_len])
+    result[2].set_shape([])
+    ids = vocab.lookup(result[0])
+    ids2 = vocab.lookup(result[1])
+    return {"sentence": ids, "sentence2": ids2}, result[2]
+
+
+def input_fn(path_csv, path_vocab, shuffle_buffer_size, num_oov_buckets):
+    vocab = tf.contrib.lookup.index_table_from_file(path_vocab, num_oov_buckets=num_oov_buckets)
+    dataset = tf.data.TextLineDataset(path_csv)
+    dataset = dataset.map(lambda line: parse_line(line, vocab))
+    if shuffle_buffer_size > 0:
+        dataset = dataset.shuffle(shuffle_buffer_size).repeat()
+        dataset = dataset.batch(FLAGS.batch_size).prefetch(1)
+    else:
+        dataset = dataset.batch(FLAGS.valid_data_size).repeat().prefetch(1)
+    return dataset
+
+
+def train():
+    tf.summary.scalar("loss", train_model.loss)
+    tf.summary.scalar("accuracy", train_model.accuracy)
+    merged_summary = tf.summary.merge_all()
+    writer = tf.summary.FileWriter(FLAGS.tensorboard_dir)
+
+    train_dataset = input_fn(FLAGS.train_data, FLAGS.vocab_data, shuffle_buffer_size=FLAGS.train_data_size,
+                             num_oov_buckets=1)
+    valid_dataset = input_fn(FLAGS.valid_data, FLAGS.vocab_data, shuffle_buffer_size=0, num_oov_buckets=1)
+
+    sess = tf.Session()
+    tf.tables_initializer().run(session=sess)
+    train_iterator = train_dataset.make_initializable_iterator()
+    valid_iterator = valid_dataset.make_initializable_iterator()
+    sess.run(train_iterator.initializer)
+    sess.run(valid_iterator.initializer)
+    sess.run(tf.global_variables_initializer())
+    writer.add_graph(sess.graph)
+    max_accuracy = 0.0
+    train_next = train_iterator.get_next()
+    valid_next = valid_iterator.get_next()
+    batch = 100 * math.ceil(FLAGS.train_data_size / FLAGS.batch_size)
+    for i in range(batch):
+        features, labels = sess.run(train_next)
+        feed_dict = {train_model.sentence: features['sentence'],
+                     train_model.sentence2: features['sentence2'],
+                     train_model.labels: labels}
+        loss, accuracy = sess.run([train_model.loss, train_model.accuracy], feed_dict=feed_dict)
+        if max_accuracy < accuracy:
+            max_accuracy = accuracy
+            s = sess.run(merged_summary, feed_dict=feed_dict)
+            writer.add_summary(s, i)
+            print("Iter: %d, train_loss: %f, train_accuracy: %f" % (i, loss, accuracy))
+
+            features, labels = sess.run(valid_next)
+            feed_dict = {train_model.sentence: features['sentence'],
+                         train_model.sentence2: features['sentence2'],
+                         train_model.labels: labels}
+            valid_loss, valid_accuracy = sess.run([train_model.loss, train_model.accuracy], feed_dict=feed_dict)
+            print("Iter: %d, valid_loss: %f, valid_accuracy: %f" % (i, valid_loss, valid_accuracy))
+            print("-------------------------------------------------------------------------------")
+        sess.run(train_model.optimizer, feed_dict=feed_dict)
 
 
 if __name__ == "__main__":
-    tf.flags.DEFINE_string('train_file', '../train.csv', 'Train File path(default: ../train.csv)')
-    tf.flags.DEFINE_string('valid_file', '../valid.csv', 'Valid File path(default:../valid.csv)')
-
-    tf.flags.DEFINE_integer("hidden_units", 50, "Hidden Size(default: 50)")
-    tf.flags.DEFINE_integer("layers", 3, "Layers (default: 3)")
-    tf.flags.DEFINE_float("dropout_keep_prob", 1.0, "Dropout keep probability (default: 1.0)")
-    tf.flags.DEFINE_integer("sequence_length", 100, "Sequence Length(default: 50)")
-    tf.flags.DEFINE_integer("vocab_size", 40000, "Vocabulary Size(default: 5000)")
-    tf.flags.DEFINE_integer("shuffle_size", 5000, "Vocabulary Size(default: 5000)")
-    tf.flags.DEFINE_integer("batch_size", 100, "Batch Size (default: 64)")
-    tf.flags.DEFINE_integer("embedding_size", 300, "Embedding Size (default: 300)")
-    tf.flags.DEFINE_float("learning_rate", 1e-3, "Learning Rate (default: 0.01)")
-    FLAGS = tf.flags.FLAGS
-    FLAGS.flag_values_dict()
-
-    ih = InputHelper()
-    train_x1, train_x2, train_y = ih.load_data(FLAGS.train_file)
-    # valid_x1, valid_x2, valid_y = ih.load_data(FLAGS.valid_file)
-    features = []
-    features.extend(train_x1)
-    features.extend(train_x2)
-    words, word_dic = ih.build_word_dic(features)
-    word_table = build_dic_hash_table(word_dic)
-    train_dataset = train_input_fn(FLAGS.shuffle_size, FLAGS.batch_size, train_x1, train_x2, train_y, repeat_size=3)
-    train_dataset = train_dataset.map(
-        lambda train_x1, train_x2, train_y: (word_table.lookup(train_x1), word_table.lookup(train_x2), train_y))
-    train_iterator = train_dataset.make_initializable_iterator()
-
-    # valid_dataset = train_input_fn(len(valid_x1), len(valid_x1), valid_x1, valid_x2, valid_y)
-    # valid_dataset = valid_dataset.map(
-    #     lambda x1, x2, y: (word_table.lookup(valid_x1), word_table.lookup(valid_x2), valid_y))
-    # valid_iterator = valid_dataset.make_initializable_iterator()
-
-    model = SiameseLSTM(FLAGS.vocab_size, FLAGS.embedding_size, FLAGS.hidden_units, FLAGS.layers, FLAGS.batch_size,
-                        train_iterator, FLAGS.learning_rate)
-
-    # model2 = SiameseLSTM(FLAGS.vocab_size, FLAGS.embedding_size, FLAGS.hidden_units, FLAGS.layers,
-    #                     FLAGS.batch_size,
-    #                     valid_iterator, FLAGS.learning_rate)
-
-    with tf.Session() as sess:
-        sess.run(train_iterator.initializer)
-        # sess.run(valid_iterator.initializer)
-        sess.run(tf.tables_initializer())
-        sess.run(tf.global_variables_initializer())
-        for i in range(1, 10001):
-            try:
-                if i % 100 == 0:
-                    input_x1, input_x2, input_y, pred, distance = sess.run(
-                        [model.input_x1, model.input_x2, model.input_y, model.tmp_sim, model.distance],
-                        feed_dict={model.dropout_keep_prob: 0.8})
-
-                    accuracy, loss = sess.run([model.accuracy, model.loss], feed_dict={model.dropout_keep_prob: 1.0})
-                    print("the %d batch, accuracy is %f, and loss is %f" % (i, accuracy, loss))
-
-                sess.run(model.optimizer, feed_dict={model.dropout_keep_prob: 0.8})
-
-                # if i % 10 == 0 and i != 0:
-                #     accuracy, loss = sess.run([model.accuracy, model.loss], feed_dict={model.dropout_keep_prob: 1.0})
-                #     print("the %d batch, accuracy is %f, and loss is %f" % (i, accuracy, loss))
-            except tf.errors.OutOfRangeError:
-                break
+    params = {
+        'vocab_size': 2555,
+        'embedding_size': 100,
+        'sequence_length': 10,
+        'learning_rate': 0.01,
+        'n_layers': 2,
+        'n_hidden': 100,
+        'dropout': 0.8
+    }
+    train_model = siamese_model(params)
+    train()

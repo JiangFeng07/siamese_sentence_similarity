@@ -7,7 +7,7 @@ import numpy as np
 import math
 
 from src.data_helper import extract_chinese_word
-from src.my_model import siamese_model
+from src.siamese_model import siamese_model
 
 flags = tf.app.flags
 flags.DEFINE_integer("sentence_max_len", 10, "max length of sentences")

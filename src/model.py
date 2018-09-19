@@ -12,9 +12,9 @@ from src.my_model import siamese_model
 flags = tf.app.flags
 flags.DEFINE_integer("sentence_max_len", 10, "max length of sentences")
 flags.DEFINE_string("pad_word", "<pad>", "used for pad sentence")
-flags.DEFINE_string("train_data", "../data/dish_train.csv", "train data")
-flags.DEFINE_string("valid_data", "../data/dish_valid.csv", "valid data")
-flags.DEFINE_string("vocab_data", "../data/dish_vocab.csv", "vocab file")
+flags.DEFINE_string("train_data", "../data/train.csv", "train data")
+flags.DEFINE_string("valid_data", "../data/valid.csv", "valid data")
+flags.DEFINE_string("vocab_data", "../data/vocab.csv", "vocab file")
 flags.DEFINE_string("tensorboard_dir", "../tensorboard", 'tensorboard file')
 flags.DEFINE_integer("batch_size", 100, "batch size")
 flags.DEFINE_integer("embedding_size", 30, "embedding size")

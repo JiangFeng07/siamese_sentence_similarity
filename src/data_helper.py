@@ -11,10 +11,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--date_dir', type=str,
                     default="../data/train.csv")
 parser.add_argument('--date_dir2', type=str,
-                    default="../data/dish_valid.csv")
+                    default="../data/valid.csv")
 
 parser.add_argument('--vocab_dir', type=str,
-                    default="../data/dish_vocab.csv")
+                    default="../data/vocab.csv")
 FLAGS, unparser = parser.parse_known_args()
 
 

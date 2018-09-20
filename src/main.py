@@ -8,11 +8,14 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
-
+import logging
 from src.siamese_model import siamese_model
 from tensorflow.contrib import lookup
 
 tf.logging.set_verbosity(tf.logging.INFO)
+
+tf.logging._handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] <%(processName)s> (%(threadName)s) %(message)s"))
 
 flags = tf.app.flags
 flags.DEFINE_integer("sentence_max_len", 10, "max length of sentences")
@@ -155,8 +158,8 @@ def train():
             if best_valid_accuracy < valid_accuracy:
                 best_valid_accuracy = valid_accuracy
                 saver.save(sess=sess, save_path=FLAGS.model_path)
-                print("Iter: %d, train_loss: %f, train_accuracy: %f" % (i, loss, accuracy))
-                print("Iter: %d, valid_loss: %f, valid_accuracy: %f\n\n" % (i, valid_loss, valid_accuracy))
+                tf.logging.info("Iter: %d, train_loss: %f, train_accuracy: %f" % (i, loss, accuracy))
+                tf.logging.info("Iter: %d, valid_loss: %f, valid_accuracy: %f\n\n" % (i, valid_loss, valid_accuracy))
         sess.run(train_model.optimizer, feed_dict=feed_dict)
 
 
@@ -173,5 +176,5 @@ if __name__ == "__main__":
     vocab = lookup.index_table_from_file(FLAGS.vocab_data, num_oov_buckets=0, default_value=1)
 
     predict_dataset = input_fn(FLAGS.predict_data, shuffle_buffer_size=0, mode='predict', vocab=vocab)
-    # train()
-    predict(predict_dataset)
+    train()
+    # predict(predict_dataset)

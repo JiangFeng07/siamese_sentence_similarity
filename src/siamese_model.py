@@ -10,12 +10,6 @@ from tensorflow.contrib.layers import xavier_initializer
 
 class siamese_model(object):
     def __init__(self, params):
-        # self.iterator = iterator
-        # features, labels = self.iterator.get_next()
-        # self.sentence = features['sentence']
-        # self.sentence2 = features['sentence2']
-        # self.labels = labels
-
         self.sentence = tf.placeholder(tf.int32, shape=[None, params['sequence_length']], name='sentence')
         self.sentence2 = tf.placeholder(tf.int32, shape=[None, params['sequence_length']], name='sentence2')
         self.labels = tf.placeholder(tf.float32, shape=[None], name='labels')
@@ -38,9 +32,9 @@ class siamese_model(object):
         with tf.name_scope('out'):
             out_first = self.biRnn(inputs, params, scope='first')
             out_second = self.biRnn(inputs2, params, scope='second')
-            distance = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(out_first, out_second)), 1, keepdims=True))
-            distance = tf.div(distance, tf.add(tf.sqrt(tf.reduce_sum(tf.square(out_first), 1, keepdims=True)),
-                                               tf.sqrt(tf.reduce_sum(tf.square(out_second), 1, keepdims=True))))
+            distance = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(out_first, out_second)), 1, keep_dims=True))
+            distance = tf.div(distance, tf.add(tf.sqrt(tf.reduce_sum(tf.square(out_first), 1, keep_dims=True)),
+                                               tf.sqrt(tf.reduce_sum(tf.square(out_second), 1, keep_dims=True))))
             distance = tf.reshape(distance, [-1], name='distance')
         with tf.name_scope('loss'):
             self.loss = self.constrastive_loss(self.labels, distance)

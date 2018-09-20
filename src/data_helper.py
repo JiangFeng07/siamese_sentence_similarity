@@ -18,7 +18,7 @@ parser.add_argument('--vocab_dir', type=str,
 FLAGS, unparser = parser.parse_known_args()
 
 
-def bulid_vocab(date_dir, date_dir2, vocab_dir):
+def build_vocab(date_dir, date_dir2, vocab_dir):
     vocab = set()
     with tf.gfile.GFile(date_dir, 'r') as f:
         f.readline()
@@ -51,4 +51,4 @@ def extract_chinese_word(text):
 
 
 if __name__ == "__main__":
-    bulid_vocab(FLAGS.date_dir, FLAGS.date_dir2, FLAGS.vocab_dir)
+    build_vocab(FLAGS.date_dir, FLAGS.date_dir2, FLAGS.vocab_dir)

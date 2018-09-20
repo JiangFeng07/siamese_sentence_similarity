@@ -133,7 +133,11 @@ def train():
     train_dataset = input_fn(FLAGS.train_data, shuffle_buffer_size=FLAGS.train_data_size, mode='train', vocab=vocab)
     valid_dataset = input_fn(FLAGS.valid_data, shuffle_buffer_size=0, mode='valid', vocab=vocab)
 
-    sess = tf.Session()
+    ## GPU 使用动态增长
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
     tf.tables_initializer().run(session=sess)
     train_iterator = train_dataset.make_initializable_iterator()
     sess.run(train_iterator.initializer)

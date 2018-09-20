@@ -13,6 +13,7 @@ class siamese_model(object):
         self.sentence = tf.placeholder(tf.int32, shape=[None, params['sequence_length']], name='sentence')
         self.sentence2 = tf.placeholder(tf.int32, shape=[None, params['sequence_length']], name='sentence2')
         self.labels = tf.placeholder(tf.float32, shape=[None], name='labels')
+        self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
 
         with tf.name_scope('embedding'):
             embeddings = tf.get_variable(name='embeddings', dtype=tf.float32,
@@ -42,9 +43,9 @@ class siamese_model(object):
         self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=params['learning_rate']).minimize(self.loss)
 
         with tf.name_scope('accuracy'):
-            temp_sim = tf.subtract(tf.ones_like(distance), tf.rint(distance),
-                                   name="temp_sim")  # auto threshold 0.5
-            correct_predictions = tf.equal(temp_sim, self.labels)
+            self.predict = tf.subtract(tf.ones_like(distance), tf.rint(distance),
+                                       name="predict")  # auto threshold 0.5
+            correct_predictions = tf.equal(self.predict, self.labels)
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32), name="accuracy")
 
     def constrastive_loss(self, y, d):
@@ -58,14 +59,14 @@ class siamese_model(object):
             lstm_fw_cell_list = []
             for _ in range(params['n_layers']):
                 fw_cell = tf.nn.rnn_cell.BasicLSTMCell(params['n_hidden'], forget_bias=1.0, state_is_tuple=True)
-                fw_cell_drop = rnn.DropoutWrapper(fw_cell, output_keep_prob=params['dropout'])
+                fw_cell_drop = rnn.DropoutWrapper(fw_cell, output_keep_prob=self.keep_prob)
                 lstm_fw_cell_list.append(fw_cell_drop)
             lstm_fw_cell_m = tf.nn.rnn_cell.MultiRNNCell(cells=lstm_fw_cell_list, state_is_tuple=True)
         with tf.name_scope('bw_' + scope), tf.variable_scope('bw_' + scope):
             lstm_bw_cell_list = []
             for _ in range(params['n_layers']):
                 bw_cell = tf.nn.rnn_cell.BasicLSTMCell(params['n_hidden'], forget_bias=1.0, state_is_tuple=True)
-                bw_cell_drop = rnn.DropoutWrapper(bw_cell, output_keep_prob=params['dropout'])
+                bw_cell_drop = rnn.DropoutWrapper(bw_cell, output_keep_prob=self.keep_prob)
                 lstm_bw_cell_list.append(bw_cell_drop)
             lstm_bw_cell_m = tf.nn.rnn_cell.MultiRNNCell(cells=lstm_bw_cell_list, state_is_tuple=True)
 

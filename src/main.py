@@ -26,11 +26,15 @@ flags.DEFINE_string("predict_data", "../data/predict.csv", "predict data")
 flags.DEFINE_string("vocab_data", "../data/vocab.csv", "vocab file")
 flags.DEFINE_string("tensorboard_dir", "../tensorboard", 'tensorboard file')
 flags.DEFINE_string("model_path", "../model/model.ckpt", 'model path')
-flags.DEFINE_integer("batch_size", 120, "batch size")
-flags.DEFINE_integer("embedding_size", 30, "embedding size")
+flags.DEFINE_integer("batch_size", 100, "batch size")
 flags.DEFINE_integer("train_data_size", 18000, "train_data_size")
 flags.DEFINE_integer("valid_data_size", 2000, "train_data_size")
 flags.DEFINE_integer("epoch_size", 3, "epoch_size")
+flags.DEFINE_integer("vocab_size", 12000, "vocabulary size")
+flags.DEFINE_integer("embedding_size", 100, "embedding size")
+flags.DEFINE_integer("learning_rate", 0.01, "learning rate")
+flags.DEFINE_integer("n_layers", 3, "layers")
+flags.DEFINE_integer("n_hidden", 100, "hidden units")
 FLAGS = flags.FLAGS
 
 
@@ -151,9 +155,9 @@ def train():
         feed_dict = {train_model.sentence: features['sentence'],
                      train_model.sentence2: features['sentence2'],
                      train_model.labels: labels,
-                     train_model.keep_prob:0.8}
+                     train_model.keep_prob: 0.8}
         loss, accuracy = sess.run([train_model.loss, train_model.accuracy], feed_dict=feed_dict)
-        if i % 100 == 0:
+        if i % 20 == 0:
             valid_loss, valid_accuracy = evaluate(sess, valid_dataset)
             if best_valid_accuracy < valid_accuracy:
                 best_valid_accuracy = valid_accuracy
@@ -166,16 +170,16 @@ def train():
 
 if __name__ == "__main__":
     params = {
-        'vocab_size': 12000,
-        'embedding_size': 100,
-        'sequence_length': 10,
-        'learning_rate': 0.01,
-        'n_layers': 3,
-        'n_hidden': 100
+        'vocab_size': FLAGS.vocab_size,
+        'embedding_size': FLAGS.embedding_size,
+        'sequence_length': FLAGS.sentence_max_len,
+        'learning_rate': FLAGS.learning_rate,
+        'n_layers': FLAGS.n_layers,
+        'n_hidden': FLAGS.n_hidden
     }
     train_model = siamese_model(params)
     vocab = lookup.index_table_from_file(FLAGS.vocab_data, num_oov_buckets=0, default_value=1)
 
-    predict_dataset = input_fn(FLAGS.predict_data, shuffle_buffer_size=0, mode='predict', vocab=vocab)
+    # predict_dataset = input_fn(FLAGS.predict_data, shuffle_buffer_size=0, mode='predict', vocab=vocab)
     train()
     # predict(predict_dataset)

@@ -9,11 +9,11 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 import logging
+import math
 from src.siamese_model import siamese_model
 from tensorflow.contrib import lookup
 
 tf.logging.set_verbosity(tf.logging.INFO)
-
 tf.logging._handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] <%(processName)s> (%(threadName)s) %(message)s"))
 
@@ -30,6 +30,7 @@ flags.DEFINE_integer("batch_size", 120, "batch size")
 flags.DEFINE_integer("embedding_size", 30, "embedding size")
 flags.DEFINE_integer("train_data_size", 18000, "train_data_size")
 flags.DEFINE_integer("valid_data_size", 2000, "train_data_size")
+flags.DEFINE_integer("epoch_size", 3, "epoch_size")
 FLAGS = flags.FLAGS
 
 
@@ -127,7 +128,6 @@ def train():
     tf.summary.scalar("accuracy", train_model.accuracy)
     merged_summary = tf.summary.merge_all()
     writer = tf.summary.FileWriter(FLAGS.tensorboard_dir)
-
     saver = tf.train.Saver()
 
     train_dataset = input_fn(FLAGS.train_data, shuffle_buffer_size=FLAGS.train_data_size, mode='train', vocab=vocab)
@@ -145,23 +145,20 @@ def train():
     writer.add_graph(sess.graph)
     best_valid_accuracy = 0.0
     train_next = train_iterator.get_next()
-    # batch = int(100 * math.ceil(FLAGS.train_data_size / FLAGS.batch_size))
-    for i in range(5000):
+    batch = int(FLAGS.epoch_size * math.ceil(FLAGS.train_data_size / FLAGS.batch_size))
+    for i in range(batch):
         features, labels = sess.run(train_next)
         feed_dict = {train_model.sentence: features['sentence'],
                      train_model.sentence2: features['sentence2'],
                      train_model.labels: labels,
-                     train_model.keep_prob: 0.8}
+                     train_model.keep_prob:0.8}
         loss, accuracy = sess.run([train_model.loss, train_model.accuracy], feed_dict=feed_dict)
-
-        if i % 20 == 0:
-            s = sess.run(merged_summary, feed_dict=feed_dict)
-            writer.add_summary(s, i)
+        if i % 100 == 0:
             valid_loss, valid_accuracy = evaluate(sess, valid_dataset)
-
             if best_valid_accuracy < valid_accuracy:
                 best_valid_accuracy = valid_accuracy
-                saver.save(sess=sess, save_path=FLAGS.model_path)
+                s = sess.run(merged_summary, feed_dict=feed_dict)
+                writer.add_summary(s, i)
                 tf.logging.info("Iter: %d, train_loss: %f, train_accuracy: %f" % (i, loss, accuracy))
                 tf.logging.info("Iter: %d, valid_loss: %f, valid_accuracy: %f\n\n" % (i, valid_loss, valid_accuracy))
         sess.run(train_model.optimizer, feed_dict=feed_dict)
